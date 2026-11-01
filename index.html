@@ -533,43 +533,23 @@ figcaption{font-size:.82rem;color:var(--ink-3)}
         </tbody></table></div>
       </div>
     </div>
-    <div class="grid2">
-      <div class="panel">
+    <div class="panel">
+      <div class="toolbar">
         <h3>Pruebas en Swagger (/docs)</h3>
-        <div class="tw"><table><thead><tr><th>Prueba</th><th class="num">Código</th></tr></thead><tbody>
-          <tr><td>Crear un post</td><td class="num">201</td></tr>
-          <tr><td>Buscarlo por id</td><td class="num">200</td></tr>
-          <tr><td>Buscar un id que no existe</td><td class="num">404</td></tr>
-          <tr><td>Mandar un post sin autor</td><td class="num">422</td></tr>
-          <tr><td>Mandar un post vacío</td><td class="num">400</td></tr>
-          <tr><td>Eliminarlo</td><td class="num">204</td></tr>
-        </tbody></table></div>
-        <p class="muted">Aprendizaje: las pruebas dejaron posts en la base y los resultados dejaron de coincidir. Se detectaron porque sus ids no empezaban con 6651, se borraron y se corrigieron los contadores.</p>
+        <div class="legend"><span><i style="background:var(--s3)"></i>salió bien</span><span><i style="background:var(--bad)"></i>error esperado</span></div>
       </div>
-      <details open><summary>Las rutas en main.py</summary><div>
-<pre>@app.exception_handler(servicio.NoEncontrado)
-def manejar_no_encontrado(request, error):
-    return JSONResponse(status_code=404, content={"error": str(error)})
-
-@app.exception_handler(servicio.ReglaNoCumplida)
-def manejar_regla(request, error):
-    return JSONResponse(status_code=400, content={"error": str(error)})
-
-@app.post("/posts", status_code=201, summary="Publicar un post")
-def crear_post(datos: PostNuevo):
-    return servicio.crear_post(datos)
-
-@app.get("/posts/{post_id}", summary="Obtener un post por su id")
-def obtener_post(post_id: str):
-    return servicio.obtener_post(post_id)
-
-@app.patch("/posts/{post_id}", summary="Editar un post")
-def editar_post(post_id: str, cambios: PostCambios):
-    return servicio.editar_post(post_id, cambios)
-
-@app.delete("/posts/{post_id}", status_code=204, summary="Eliminar un post")
-def eliminar_post(post_id: str):
-    servicio.eliminar_post(post_id)</pre></div></details>
+      <p class="muted">Elegí una prueba para ver qué se mandó y qué respondió la API.</p>
+      <div class="qsel" id="psel" role="group" aria-label="Elegir prueba"></div>
+      <div class="head">
+        <span class="eyebrow" id="pnivel"></span>
+        <h3 id="ptit"></h3>
+        <p id="pexp" class="lede"></p>
+      </div>
+      <div class="grid2">
+        <div style="display:flex;flex-direction:column;gap:8px;min-width:0"><span class="lbl">Pedido</span><pre id="pped"></pre></div>
+        <div style="display:flex;flex-direction:column;gap:8px;min-width:0"><span class="lbl">Respuesta</span><div class="state" id="pcod"></div><pre id="pres"></pre></div>
+      </div>
+      <p class="muted">Los ids nuevos y las fechas los genera MongoDB en cada prueba, por eso aparecen como &lt;id nuevo&gt; y &lt;fecha y hora&gt;. Aprendizaje: las pruebas dejaron posts en la base y los resultados dejaron de coincidir. Se detectaron porque sus ids no empezaban con 6651, se borraron y se corrigieron los contadores.</p>
     </div>
   </section>
 
@@ -1057,6 +1037,81 @@ function verConsulta(i) {
 }
 CONSULTAS.forEach((q, i) => { const b = document.createElement("button"); b.type = "button"; b.textContent = q.id; b.title = q.tit; b.addEventListener("click", () => verConsulta(i)); qsel.appendChild(b); });
 verConsulta(0);
+
+// ---------- 5.4: ejemplos de las pruebas en Swagger (armados con el código real de la API) ----------
+const POST_CREADO = `{
+  "_id": "<id nuevo>",
+  "tipo": "original",
+  "autor": {
+    "usuario_id": "665000000000000000000001",
+    "alias": "lucia_dev",
+    "nombre_visible": "Lucía Paz",
+    "foto_url": "https://cdn.twitter.app/u/lucia.jpg"
+  },
+  "texto": "Probando la API del TP #MongoDB",
+  "fecha": "<fecha y hora>",
+  "idioma": "es",
+  "conversacion_id": "<id nuevo>",
+  "contadores": { "me_gusta": 0, "reposts": 0, "respuestas": 0, "citas": 0, "vistas": 0 },
+  "hashtags": ["mongodb"]
+}`;
+const PRUEBAS = [
+ {tit:"Crear un post", nivel:"Pasa los tres niveles", ok:true, cod:"201 Created",
+  exp:"El usuario solo manda su id y el texto. El servicio completa el resto: copia los datos del autor, pone la fecha, arranca los contadores en 0 y saca el hashtag del texto.",
+  ped:`POST /posts
+{
+  "usuario_id": "665000000000000000000001",
+  "texto": "Probando la API del TP #MongoDB"
+}`, res:POST_CREADO},
+ {tit:"Buscarlo por id", nivel:"Pasa los tres niveles", ok:true, cod:"200 OK",
+  exp:"Se pide el post recién creado usando el id que devolvió la prueba anterior.",
+  ped:`GET /posts/<id nuevo>`, res:POST_CREADO},
+ {tit:"Buscar un id que no existe", nivel:"Lo frena el servicio", ok:false, cod:"404 Not Found",
+  exp:"El id tiene formato válido, pero ningún post lo tiene. Si el id ni siquiera tuviera formato válido, el repositorio lo detecta y la respuesta también es 404.",
+  ped:`GET /posts/665100000000000000000999`, res:`{
+  "error": "No existe un post con id 665100000000000000000999."
+}`},
+ {tit:"Mandar un post sin autor", nivel:"Lo frena Pydantic (modelos.py)", ok:false, cod:"422 Unprocessable Entity",
+  exp:"Falta usuario_id, que es obligatorio. FastAPI lo rechaza solo, antes de llegar al servicio, y dice qué campo falta.",
+  ped:`POST /posts
+{
+  "texto": "Post sin autor"
+}`, res:`{
+  "detail": [
+    {
+      "type": "missing",
+      "loc": ["body", "usuario_id"],
+      "msg": "Field required",
+      "input": { "texto": "Post sin autor" }
+    }
+  ]
+}`},
+ {tit:"Mandar un post vacío", nivel:"Lo frena el servicio", ok:false, cod:"400 Bad Request",
+  exp:"El formato es correcto, pero rompe una regla de negocio: un post tiene que tener texto o al menos un medio.",
+  ped:`POST /posts
+{
+  "usuario_id": "665000000000000000000001",
+  "texto": ""
+}`, res:`{
+  "error": "El post tiene que tener texto o al menos un medio."
+}`},
+ {tit:"Eliminarlo", nivel:"Pasa los tres niveles", ok:true, cod:"204 No Content",
+  exp:"Se borra el post de prueba. La API no devuelve contenido, y el servicio resta 1 al contador de posts de lucia_dev.",
+  ped:`DELETE /posts/<id nuevo>`, res:`(sin contenido)`}
+];
+const psel = document.getElementById("psel");
+function verPrueba(i) {
+  const p = PRUEBAS[i];
+  psel.querySelectorAll("button").forEach((b, j) => b.setAttribute("aria-pressed", j === i ? "true" : "false"));
+  document.getElementById("pnivel").textContent = "Prueba " + (i + 1) + " · " + p.nivel;
+  document.getElementById("ptit").textContent = p.tit;
+  document.getElementById("pexp").textContent = p.exp;
+  document.getElementById("pped").textContent = p.ped;
+  document.getElementById("pres").textContent = p.res;
+  const c = document.getElementById("pcod"); c.textContent = p.cod; c.className = "state " + (p.ok ? "good" : "bad");
+}
+PRUEBAS.forEach((p, i) => { const b = document.createElement("button"); b.type = "button"; b.textContent = p.cod.split(" ")[0] + " · " + p.tit; b.addEventListener("click", () => verPrueba(i)); psel.appendChild(b); });
+verPrueba(0);
 
 // ---------- 5.6: simulación del voto ----------
 const PASOS = {
