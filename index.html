@@ -1,0 +1,1190 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Twitter en MongoDB</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Public+Sans:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: igual que la página de Netflix del grupo. Barra lateral con las 8 etapas (5.1 a 5.8)
+   + panel de contenido que muestra una etapa por vez; en celular, barra de etapas desplazable arriba. */
+:root{
+  --bg:#f3f5f8; --surface:#ffffff; --surface-2:#e9edf3; --line:#d5dbe4;
+  --ink:#121924; --ink-2:#465163; --ink-3:#6b7586;
+  --accent:#1660b8; --accent-soft:#e1ecfa;
+  --code-bg:#eef1f5;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s7:#6250d6;
+  /* colores fijos por concepto */
+  --emb:var(--s3); --ref:var(--s7); --copia:var(--s4); --sin:var(--s2); --con:var(--s1); --bad:#d0423b;
+  --f-display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
+  --f-body:"Public Sans","Segoe UI",system-ui,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11151c; --surface:#181e27; --surface-2:#212833; --line:#2d3542;
+  --ink:#edf1f6; --ink-2:#b6bfcc; --ink-3:#8a93a3;
+  --accent:#6fb0f0; --accent-soft:#17283d; --code-bg:#141922;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s7:#9085e9; --bad:#e2625b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11151c; --surface:#181e27; --surface-2:#212833; --line:#2d3542;
+  --ink:#edf1f6; --ink-2:#b6bfcc; --ink-3:#8a93a3;
+  --accent:#6fb0f0; --accent-soft:#17283d; --code-bg:#141922;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s7:#9085e9; --bad:#e2625b; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.6}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;line-height:1.15;margin:0}
+h1{font-size:clamp(1.9rem,4vw,2.8rem);font-weight:700;letter-spacing:-.01em}
+h2{font-size:1.6rem;font-weight:700}
+h3{font-size:1.12rem;font-weight:700}
+p{margin:0;max-width:68ch}
+code,pre{font-family:var(--f-mono);font-size:.84em}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:grid;grid-template-columns:250px minmax(0,1fr);min-height:100vh}
+.side{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;height:100vh;padding:28px 18px;padding-left:max(18px,env(safe-area-inset-left,0px));border-right:1px solid var(--line);background:var(--surface);display:flex;flex-direction:column;gap:22px;overflow-y:auto}
+.brand small{display:block;font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:600}
+.brand b{font-family:var(--f-display);font-size:1.25rem;display:block;margin-top:2px}
+.brand span{color:var(--ink-3);font-size:.82rem;display:block}
+nav.steps{display:flex;flex-direction:column;gap:2px}
+nav.steps button{all:unset;cursor:pointer;display:grid;grid-template-columns:34px 1fr;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;color:var(--ink-2);font-size:.92rem}
+nav.steps button .n{font-family:var(--f-mono);font-size:.72rem;color:var(--ink-3);text-align:center;border:1px solid var(--line);border-radius:6px;padding:1px 0}
+nav.steps button:hover{background:var(--surface-2);color:var(--ink)}
+nav.steps button[aria-current="true"]{background:var(--accent-soft);color:var(--ink);font-weight:600}
+nav.steps button[aria-current="true"] .n{border-color:var(--accent);color:var(--accent)}
+nav.steps button:focus-visible{outline:2px solid var(--accent)}
+.side .foot{margin-top:auto;font-size:.78rem;color:var(--ink-3);display:flex;flex-direction:column;gap:10px}
+.iconbtn{all:unset;cursor:pointer;font-size:.8rem;border:1px solid var(--line);border-radius:8px;padding:5px 10px;color:var(--ink-2);background:var(--surface);text-align:center}
+.iconbtn:hover{border-color:var(--accent);color:var(--ink)}
+.iconbtn:focus-visible{outline:2px solid var(--accent)}
+main{padding-block:36px 72px;padding-left:max(16px,env(safe-area-inset-left,0px),clamp(16px,4vw,56px));padding-right:max(16px,env(safe-area-inset-right,0px),clamp(16px,4vw,56px));min-width:0}
+section.view{display:flex;flex-direction:column;gap:28px;max-width:1080px}
+.eyebrow{font-size:.75rem;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:600}
+.lede{font-size:1.08rem;color:var(--ink-2)}
+.head{display:flex;flex-direction:column;gap:10px}
+.consigna{font-size:.88rem;color:var(--ink-3);border:1px dashed var(--line);border-radius:8px;padding:8px 12px;max-width:80ch}
+.consigna b{color:var(--ink-2)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:22px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.kpi b{display:block;font-family:var(--f-display);font-size:1.7rem;font-variant-numeric:tabular-nums}
+.kpi span{color:var(--ink-3);font-size:.82rem}
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.88rem}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:.74rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);font-weight:600;background:var(--surface-2)}
+tr:last-child td{border-bottom:none}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+pre{background:var(--code-bg);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto;margin:0;line-height:1.5;color:var(--ink)}
+details{border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+details summary{cursor:pointer;padding:10px 14px;font-weight:600;font-size:.9rem;color:var(--ink-2)}
+details[open] summary{border-bottom:1px solid var(--line)}
+details > div{padding:14px;display:flex;flex-direction:column;gap:12px;min-width:0}
+ul.clean,ol.clean{margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:6px;max-width:75ch}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:.78rem;padding:2px 9px;border-radius:999px;background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line)}
+.seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)}
+.seg button{all:unset;cursor:pointer;padding:6px 12px;font-size:.84rem;color:var(--ink-2)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
+.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.btn{all:unset;cursor:pointer;padding:7px 14px;border-radius:8px;background:var(--accent);color:var(--surface);font-size:.86rem;font-weight:600}
+.btn.ghost{background:transparent;color:var(--ink-2);border:1px solid var(--line)}
+.btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.btn[disabled]{opacity:.45;cursor:default}
+.chartbox{position:relative;height:320px;min-width:0}
+.chartbox.tall{height:400px}
+.chartbox.short{height:260px}
+.answer{border-left:3px solid var(--accent);padding:4px 0 4px 14px;color:var(--ink);max-width:75ch}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:.84rem;color:var(--ink-2)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.toolbar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+.ok{color:var(--s3);font-weight:600}
+.badtxt{color:var(--bad);font-weight:600}
+.muted{color:var(--ink-3);font-size:.86rem}
+.tag{display:inline-block;font-size:.72rem;font-weight:600;padding:1px 8px;border-radius:999px;color:var(--surface);white-space:nowrap}
+.tag.emb{background:var(--emb)} .tag.ref{background:var(--ref)} .tag.copia{background:var(--copia)} .tag.col{background:var(--ink-2)}
+/* recorrido */
+.timeline{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.tstep{all:unset;cursor:pointer;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:6px}
+.tstep:hover{border-color:var(--accent)}
+.tstep:focus-visible{outline:2px solid var(--accent)}
+.tstep .n{font-family:var(--f-mono);font-size:.78rem;color:var(--accent)}
+.tstep b{font-family:var(--f-display);font-size:1.05rem}
+.tstep span{color:var(--ink-3);font-size:.85rem}
+/* colecciones */
+.colls{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:start}
+.tbl{border:1px solid var(--line);border-radius:10px;background:var(--surface);overflow:hidden;font-size:.82rem;min-width:0}
+.tbl header{background:var(--surface-2);padding:7px 12px;font-family:var(--f-mono);font-weight:500;font-size:.84rem;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px}
+.tbl header em{font-style:normal;color:var(--ink-3)}
+.tbl.main{border:2px solid var(--accent)}
+.tbl.main header{background:var(--accent-soft)}
+.tbl ul{list-style:none;margin:0;padding:8px 12px;display:flex;flex-direction:column;gap:3px;font-family:var(--f-mono);font-size:.74rem;color:var(--ink-2)}
+.tbl li{border-radius:4px;padding:0 4px;margin:0 -4px;transition:background .15s}
+.tbl li.e{color:var(--emb)} .tbl li.r{color:var(--ref)} .tbl li.c{color:var(--copia)}
+.tbl li.hl{background:var(--accent-soft);color:var(--ink);font-weight:500}
+.tbl li .o{color:var(--ink-3)}
+tr.rel{cursor:pointer}
+tr.rel:hover td,tr.rel.on td{background:var(--accent-soft)}
+/* pipeline */
+.pipe{display:flex;flex-direction:column}
+.stage{display:grid;grid-template-columns:150px minmax(0,1fr);gap:18px;padding:18px 0;border-top:1px solid var(--line)}
+.stage:first-child{border-top:none;padding-top:0}
+.stage .stag{font-family:var(--f-mono);font-size:.78rem;color:var(--accent);font-weight:500}
+.stage .stag b{display:block;font-family:var(--f-display);font-size:1.05rem;color:var(--ink)}
+.stage .body{display:flex;flex-direction:column;gap:10px;min-width:0}
+.facts{display:flex;flex-wrap:wrap;gap:8px}
+.fact{border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:.84rem;background:var(--surface)}
+.fact b{font-variant-numeric:tabular-nums}
+/* capas / flujo */
+.flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:8px}
+.flow .node{flex:1 1 140px;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 12px;font-size:.86rem;display:flex;flex-direction:column;gap:2px;min-width:0}
+.flow .node small{font-family:var(--f-mono);font-size:.72rem;color:var(--ink-3)}
+.flow .node b{font-family:var(--f-display)}
+.flow .node.db{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.flow .node.db small{color:var(--surface);opacity:.75}
+.flow .arr{align-self:center;color:var(--ink-3);font-family:var(--f-mono)}
+/* consultas */
+.qsel{display:flex;flex-wrap:wrap;gap:6px}
+.qsel button{all:unset;cursor:pointer;font-size:.8rem;padding:5px 11px;border:1px solid var(--line);border-radius:999px;color:var(--ink-2);background:var(--surface);font-family:var(--f-mono)}
+.qsel button:hover{border-color:var(--accent);color:var(--ink)}
+.qsel button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.qsel button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* transacción */
+.sim{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.box{border:1px solid var(--line);border-radius:10px;padding:14px;background:var(--surface-2);display:flex;flex-direction:column;gap:6px;min-width:0}
+.box small{font-family:var(--f-mono);font-size:.74rem;color:var(--ink-3)}
+.box b{font-family:var(--f-display);font-size:2rem;font-variant-numeric:tabular-nums;transition:color .2s}
+.box.changed{border-color:var(--accent)}
+.state{border-radius:10px;padding:10px 14px;font-weight:600;font-size:.92rem;border:1px solid var(--line)}
+.state.good{color:var(--s3);border-color:var(--s3)}
+.state.bad{color:var(--bad);border-color:var(--bad)}
+.state.wait{color:var(--ink-2)}
+ol.steplog{margin:0;padding-left:1.3em;display:flex;flex-direction:column;gap:4px;font-size:.9rem}
+ol.steplog li{color:var(--ink-3)}
+ol.steplog li.done{color:var(--ink)}
+ol.steplog li.now{color:var(--accent);font-weight:600}
+/* docker */
+.dock{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2.2fr);gap:14px;align-items:stretch}
+.host,.net{border:1px dashed var(--ink-3);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.net{border-style:solid;border-color:var(--accent);background:var(--accent-soft)}
+.net .row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.ctr{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:4px;font-size:.84rem;min-width:0}
+.ctr b{font-family:var(--f-mono);font-size:.86rem}
+.ctr .muted{font-size:.78rem}
+.lbl{font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+.cmd{display:flex;gap:8px;align-items:flex-start}
+.cmd pre{flex:1;min-width:0}
+.cmd .iconbtn{flex:none;margin-top:6px}
+figure{margin:0;display:flex;flex-direction:column;gap:6px}
+figure img{border:1px solid var(--line);border-radius:8px;display:block}
+figcaption{font-size:.82rem;color:var(--ink-3)}
+.presbar{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));display:flex;gap:6px;z-index:6}
+.presbar .iconbtn{background:var(--surface);box-shadow:0 2px 8px rgb(0 0 0 / .12)}
+@media (max-width:980px){.colls{grid-template-columns:1fr 1fr}}
+@media (max-width:860px){
+  .app{grid-template-columns:1fr}
+  .side{position:sticky;top:env(safe-area-inset-top,0px);height:auto;flex-direction:row;align-items:center;padding:10px 16px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));border-right:none;border-bottom:1px solid var(--line);z-index:5;gap:12px}
+  .brand span,.brand small,.side .foot{display:none}
+  .brand b{font-size:1rem;white-space:nowrap}
+  nav.steps{flex-direction:row;overflow-x:auto;gap:4px}
+  nav.steps button{grid-template-columns:auto auto;white-space:nowrap;padding:6px 9px}
+  .stage{grid-template-columns:1fr;gap:8px}
+  .dock{grid-template-columns:1fr}
+  .chartbox{height:290px}
+  .chartbox.tall{height:380px}
+}
+@media (max-width:560px){.colls,.sim,.net .row{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+</style>
+<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+
+
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <small>TP NoSQL · MongoDB</small>
+      <b>Twitter en MongoDB</b>
+      <span>Base de Datos Aplicada · UCC 2026</span>
+    </div>
+    <nav class="steps" id="steps" aria-label="Etapas del trabajo">
+      <button data-v="inicio"><span class="n">·</span>Inicio</button>
+      <button data-v="diseno"><span class="n">5.1</span>Diseño</button>
+      <button data-v="carga"><span class="n">5.2</span>Carga de datos</button>
+      <button data-v="consultas"><span class="n">5.3</span>Consultas</button>
+      <button data-v="api"><span class="n">5.4</span>API</button>
+      <button data-v="indices"><span class="n">5.5</span>Índices</button>
+      <button data-v="transacciones"><span class="n">5.6</span>Transacciones</button>
+      <button data-v="analisis"><span class="n">5.7</span>Análisis</button>
+      <button data-v="docker"><span class="n">5.8</span>Docker</button>
+      <button data-v="cierre"><span class="n">✓</span>Cierre</button>
+    </nav>
+    <div class="foot">
+      <span>Usá ← y → del teclado para pasar de etapa.</span>
+      <button class="iconbtn" id="tema" type="button">Cambiar tema</button>
+    </div>
+  </aside>
+
+  <main>
+  <!-- ================= INICIO ================= -->
+  <section class="view" id="v-inicio">
+    <div class="head">
+      <span class="eyebrow">Base de datos documental · red social</span>
+      <h1>Cómo guardar una red social en documentos</h1>
+      <p class="lede">Modelamos una red social de publicaciones cortas con la estructura de Twitter (X) en MongoDB. Cada post se guarda como un documento con todo lo que se muestra en pantalla, y la base se diseñó a partir de cómo se usa la aplicación: qué se lee junto, qué crece sin límite y qué cambia seguido.</p>
+      <p class="muted" id="grupo" hidden></p>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><b>470</b><span>documentos de prueba</span></div>
+      <div class="kpi"><b>4</b><span>colecciones</span></div>
+      <div class="kpi"><b>12</b><span>consultas</span></div>
+      <div class="kpi"><b>5</b><span>endpoints en la API</span></div>
+      <div class="kpi"><b>200 → 3</b><span>documentos leídos con índice (perfil)</span></div>
+      <div class="kpi"><b>2</b><span>contenedores en Docker</span></div>
+    </div>
+    <div class="panel">
+      <h3>Recorrido del proyecto</h3>
+      <p class="muted">Cada etapa se apoya en la anterior. Hacé clic en una para ver qué hicimos.</p>
+      <div class="timeline">
+        <button class="tstep" data-go="diseno"><span class="n">5.1</span><b>Diseño</b><span>4 colecciones, qué se embebe y qué se referencia</span></button>
+        <button class="tstep" data-go="carga"><span class="n">5.2</span><b>Carga de datos</b><span>Validadores, índices y 470 documentos reproducibles</span></button>
+        <button class="tstep" data-go="consultas"><span class="n">5.3</span><b>Consultas</b><span>12 consultas con find y aggregate</span></button>
+        <button class="tstep" data-go="api"><span class="n">5.4</span><b>API</b><span>FastAPI en capas, CRUD de posts</span></button>
+        <button class="tstep" data-go="indices"><span class="n">5.5</span><b>Índices</b><span>explain: COLLSCAN contra IXSCAN</span></button>
+        <button class="tstep" data-go="transacciones"><span class="n">5.6</span><b>Transacciones</b><span>Votar sin dejar la encuesta a medias</span></button>
+        <button class="tstep" data-go="analisis"><span class="n">5.7</span><b>Análisis</b><span>4 indicadores con pandas y matplotlib</span></button>
+        <button class="tstep" data-go="docker"><span class="n">5.8</span><b>Docker</b><span>Todo se levanta con un comando</span></button>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <h3>Por qué una base documental</h3>
+        <ul class="clean">
+          <li><b>Cada post es distinto:</b> uno es solo texto, otro trae fotos, otro una encuesta. Cada documento guarda solo los campos que usa.</li>
+          <li><b>Se lee todo junto:</b> texto, autor, medios y contadores salen de una sola lectura, sin JOIN.</li>
+          <li><b>El volumen es enorme:</b> MongoDB reparte los datos entre servidores (escalado horizontal).</li>
+          <li><b>La app cambia seguido:</b> un campo nuevo no obliga a migrar toda la base.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>Herramientas</h3>
+        <ul class="clean">
+          <li><b>MongoDB 8</b> con Compass y mongosh: base, scripts y consultas en JavaScript.</li>
+          <li><b>Python</b> con FastAPI, Pydantic y PyMongo: la API (5.4).</li>
+          <li><b>Jupyter</b> con pandas y matplotlib: el análisis (5.7).</li>
+          <li><b>Docker Compose:</b> el entorno reproducible (5.8).</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 5.1 ================= -->
+  <section class="view" id="v-diseno" hidden>
+    <div class="head">
+      <span class="eyebrow">Etapa 5.1 · Análisis y diseño</span>
+      <h2>Diseñamos según cómo se usa la app, no según tablas</h2>
+      <p class="lede">Partimos de qué se muestra en cada pantalla y con qué frecuencia cambia cada dato. De ahí salen cuatro colecciones y la decisión más importante: qué va adentro del post y qué va aparte.</p>
+      <p class="consigna"><b>Consigna:</b> problema y actores, requerimientos, entidades, colecciones con documentos de ejemplo, campos obligatorios y opcionales, y justificar qué se embebe y qué se referencia.</p>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <h3>Actores</h3>
+        <ul class="clean">
+          <li><b>Usuario registrado:</b> publica, responde, cita, da me gusta, vota y sigue cuentas.</li>
+          <li><b>Visitante:</b> ve perfiles y posts públicos, busca y mira tendencias.</li>
+          <li><b>Moderador:</b> oculta posts o los marca como sensibles.</li>
+          <li><b>Sistema:</b> actualiza contadores, calcula tendencias y cierra encuestas.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>15 requerimientos funcionales</h3>
+        <div class="chips">
+          <span class="chip">RF01 Registrarse</span><span class="chip">RF02 Editar perfil</span><span class="chip">RF03 Publicar (280 caracteres)</span><span class="chip">RF04 Responder y citar</span><span class="chip">RF05 Me gusta y repost</span><span class="chip">RF06 Votar una vez</span><span class="chip">RF07 Seguir</span><span class="chip">RF08 Perfil</span><span class="chip">RF09 Timeline</span><span class="chip">RF10 Hilo</span><span class="chip">RF11 Buscar</span><span class="chip">RF12 Tendencias 24 h</span><span class="chip">RF13 Editar en 30 min</span><span class="chip">RF14 Moderar posts</span><span class="chip">RF15 Denunciar usuarios</span>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="toolbar">
+        <h3>Las cuatro colecciones</h3>
+        <div class="legend"><span><i style="background:var(--emb)"></i>embebido</span><span><i style="background:var(--ref)"></i>referencia</span><span><i style="background:var(--copia)"></i>copia (desnormalizado)</span></div>
+      </div>
+      <p class="muted">Tocá una relación de la tabla de abajo para ver dónde queda en cada documento.</p>
+      <div class="colls" id="colls">
+        <div class="tbl"><header>usuarios <em>30</em></header><ul>
+          <li>_id</li><li>alias <span class="o">único</span></li><li>email <span class="o">único</span></li><li>nombre_visible</li><li>fecha_registro</li><li>verificado</li>
+          <li class="e" data-k="config">configuracion { }</li><li class="e" data-k="contadores">contadores { }</li>
+          <li><span class="o">opc.</span> biografia, foto_url</li><li class="r" data-k="fijado"><span class="o">opc.</span> post_fijado_id</li></ul></div>
+        <div class="tbl main"><header>posts <em>200 · principal</em></header><ul>
+          <li>_id, tipo, texto, fecha</li>
+          <li class="c" data-k="autor">autor { usuario_id, alias, nombre, foto }</li>
+          <li class="e" data-k="medios"><span class="o">opc.</span> medios [ ] (1 a 4)</li>
+          <li class="e" data-k="encuesta"><span class="o">opc.</span> encuesta { opciones [ ] }</li>
+          <li class="e" data-k="ubicacion"><span class="o">opc.</span> ubicacion { GeoJSON }</li>
+          <li class="e" data-k="hashtags"><span class="o">opc.</span> hashtags [ ], menciones [ ]</li>
+          <li class="e" data-k="ediciones"><span class="o">opc.</span> ediciones [ ]</li>
+          <li class="r" data-k="respuesta"><span class="o">opc.</span> en_respuesta_a.post_id</li>
+          <li class="r" data-k="cita"><span class="o">opc.</span> cita_a { post_id, resumen }</li>
+          <li class="r" data-k="respuesta">conversacion_id</li>
+          <li class="c" data-k="contadores">contadores { me_gusta, reposts, … }</li></ul></div>
+        <div class="tbl"><header>seguimientos <em>100</em></header><ul>
+          <li>_id</li><li class="r" data-k="seguir">seguidor_id</li><li class="r" data-k="seguir">seguido_id</li><li>fecha</li><li><span class="o">opc.</span> notificaciones</li>
+          <li><span class="o">índice único:</span> seguidor + seguido</li></ul></div>
+        <div class="tbl"><header>interacciones <em>140</em></header><ul>
+          <li>_id, tipo <span class="o">me_gusta · repost · voto</span></li><li class="r" data-k="inter">usuario_id</li><li class="r" data-k="inter">post_id</li><li>fecha</li><li><span class="o">opc.</span> opcion (votos)</li>
+          <li><span class="o">índice único:</span> usuario + post + tipo</li></ul></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="toolbar">
+        <h3>Qué embebemos y qué referenciamos</h3>
+        <div class="seg" id="relfiltro" role="group" aria-label="Filtrar relaciones">
+          <button aria-pressed="true" data-f="todas">Todas</button><button aria-pressed="false" data-f="emb">Embebido</button><button aria-pressed="false" data-f="ref">Referencia</button>
+        </div>
+      </div>
+      <p class="answer"><b>Regla:</b> se embebe lo que se lee siempre junto con el post, es acotado y casi no cambia. Se referencia lo que crece sin límite o tiene vida propia.</p>
+      <div class="tw"><table><thead><tr><th>Relación</th><th>Cardinalidad</th><th>Decisión</th><th>Por qué</th></tr></thead><tbody id="rels">
+        <tr class="rel" data-t="emb" data-k="medios"><td>Post → medios</td><td>1 a 0…4</td><td><span class="tag emb">Embebido</span></td><td>Siempre se muestran con el post, son máximo 4 y no se editan.</td></tr>
+        <tr class="rel" data-t="emb" data-k="encuesta"><td>Post → encuesta</td><td>1 a 0…1</td><td><span class="tag emb">Embebido</span></td><td>La encuesta no existe sin su post.</td></tr>
+        <tr class="rel" data-t="emb" data-k="ubicacion"><td>Post → ubicación</td><td>1 a 0…1</td><td><span class="tag emb">Embebido</span></td><td>Dato chico que solo tiene sentido dentro del post.</td></tr>
+        <tr class="rel" data-t="emb" data-k="hashtags"><td>Post → hashtags y menciones</td><td>1 a pocos</td><td><span class="tag emb">Embebido</span></td><td>Se leen con el post; un índice multiclave permite buscar por hashtag.</td></tr>
+        <tr class="rel" data-t="emb" data-k="ediciones"><td>Post → ediciones</td><td>1 a pocos</td><td><span class="tag emb">Embebido</span></td><td>Solo se edita durante 30 minutos: el arreglo queda corto.</td></tr>
+        <tr class="rel" data-t="ref" data-k="autor"><td>Post → autor</td><td>muchos a 1</td><td><span class="tag ref">Referencia</span> <span class="tag copia">+ copia</span></td><td>Cada post necesita alias y foto, así que se copian; el resto del perfil se busca por usuario_id.</td></tr>
+        <tr class="rel" data-t="ref" data-k="respuesta"><td>Post → post respondido</td><td>muchos a 1</td><td><span class="tag ref">Referencia</span></td><td>Un post puede tener miles de respuestas: no entran en el padre.</td></tr>
+        <tr class="rel" data-t="ref" data-k="cita"><td>Post → post citado</td><td>muchos a 1</td><td><span class="tag ref">Referencia</span> <span class="tag copia">+ resumen</span></td><td>Se muestra una tarjeta con el texto citado sin ir a buscarlo.</td></tr>
+        <tr class="rel" data-t="ref" data-k="seguir"><td>Usuario → usuario (seguir)</td><td>muchos a muchos</td><td><span class="tag col">Colección aparte</span></td><td>Una cuenta puede tener millones de seguidores.</td></tr>
+        <tr class="rel" data-t="ref" data-k="inter"><td>Usuario → post (me gusta, voto)</td><td>muchos a muchos</td><td><span class="tag col">Colección aparte</span> <span class="tag copia">+ contadores</span></td><td>Crecen sin límite; el post guarda solo el número que siempre se muestra.</td></tr>
+        <tr class="rel" data-t="emb" data-k="config"><td>Usuario → configuración</td><td>1 a 1</td><td><span class="tag emb">Embebido</span></td><td>Se lee siempre con el usuario y nadie más la usa.</td></tr>
+      </tbody></table></div>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <h3>El costo de desnormalizar</h3>
+        <ol class="clean">
+          <li><b>Copia del autor en cada post:</b> se muestra sin ir a usuarios, pero si cambia la foto hay que actualizar sus posts.</li>
+          <li><b>Contadores precalculados:</b> se lee un número en vez de contar, pero cada me gusta son dos escrituras.</li>
+          <li><b>Índices únicos:</b> impiden dos me gusta al mismo post o seguir dos veces a la misma cuenta.</li>
+        </ol>
+        <p class="answer">Vale la pena porque en una red social se lee muchísimo más de lo que se escribe.</p>
+      </div>
+      <details open><summary>Documento de ejemplo: un post con encuesta</summary><div>
+<pre>{
+  _id: ObjectId("665100000000000000000003"),
+  tipo: "original",
+  autor: {
+    usuario_id: ObjectId("665000000000000000000003"),
+    alias: "datosarg",
+    nombre_visible: "Datos AR",
+    foto_url: "https://cdn.twitter.app/u/datosarg.png"
+  },
+  texto: "¿Qué base de datos usan en su laburo? #Encuesta #DevAR",
+  fecha: ISODate("2026-10-21T09:00:00Z"),
+  hashtags: ["encuesta", "devar"],
+  encuesta: {
+    opciones: [
+      { texto: "PostgreSQL", votos: 412 },
+      { texto: "MySQL", votos: 268 },
+      { texto: "MongoDB", votos: 301 },
+      { texto: "Otra", votos: 77 }
+    ],
+    total_votos: 1058,
+    cierra: ISODate("2026-10-22T09:00:00Z"),
+    cerrada: false
+  },
+  conversacion_id: ObjectId("665100000000000000000003"),
+  contadores: { me_gusta: 190, reposts: 55, respuestas: 48, citas: 1, vistas: 20100 }
+}</pre>
+        <p class="muted">Ejemplo del documento de diseño. Los números no son los de la carga de prueba.</p>
+      </div></details>
+    </div>
+  </section>
+
+  <!-- ================= 5.2 ================= -->
+  <section class="view" id="v-carga" hidden>
+    <div class="head">
+      <span class="eyebrow">Etapa 5.2 · Implementación y carga</span>
+      <h2>Cuatro scripts que dejan la base siempre igual</h2>
+      <p class="lede">La base se crea, se carga y se verifica con scripts en JavaScript. Usan una semilla fija, así que cada vez que se corren salen exactamente los mismos 470 documentos.</p>
+      <p class="consigna"><b>Consigna:</b> crear las colecciones, scripts reproducibles de carga, verificar cantidad y consistencia, datos variados y casos límite, y documentar cómo reinicializar.</p>
+    </div>
+    <div class="panel">
+      <div class="pipe">
+        <div class="stage"><div class="stag">00_reiniciar.js<b>Borrar</b></div><div class="body"><p>Borra la base twitter para empezar de cero.</p></div></div>
+        <div class="stage"><div class="stag">01_crear_colecciones.js<b>Crear</b></div><div class="body"><p>Crea las 4 colecciones con un validador <code>$jsonSchema</code> cada una y los 13 índices.</p>
+          <div class="facts"><span class="fact">texto ≤ <b>280</b></span><span class="fact">medios <b>1 a 4</b></span><span class="fact">encuesta <b>2 a 4</b> opciones</span><span class="fact">alias <b>3 a 15</b> caracteres</span><span class="fact">tipo: original · respuesta · cita</span></div></div></div>
+        <div class="stage"><div class="stag">02_cargar_datos.js<b>Cargar</b></div><div class="body"><p>Genera los documentos combinando listas de nombres, ciudades, temas y frases, con una semilla fija (20261022). Los ids tienen prefijo por colección: 6650 usuarios, 6651 posts, 6652 seguimientos, 6653 interacciones.</p>
+          <div class="facts"><span class="fact"><b>30</b> usuarios</span><span class="fact"><b>200</b> posts</span><span class="fact"><b>100</b> seguimientos</span><span class="fact"><b>140</b> interacciones</span></div></div></div>
+        <div class="stage"><div class="stag">03_verificar.js<b>Verificar</b></div><div class="body"><p>Seis bloques de chequeos. Resultado: <span class="ok">0 errores</span>.</p>
+          <div class="facts"><span class="fact">1 · cantidades</span><span class="fact">2 · variedad</span><span class="fact">3 · casos límite</span><span class="fact">4 · referencias</span><span class="fact">5 · contadores</span><span class="fact">6 · 10 documentos inválidos, <b>10</b> rechazados</span></div></div></div>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <h3>Qué hay en los 470 documentos</h3>
+        <div class="seg" id="mixsel" role="group" aria-label="Elegir colección"><button aria-pressed="true" data-m="posts">Posts por tipo</button><button aria-pressed="false" data-m="inter">Interacciones por tipo</button></div>
+        <div class="chartbox short"><canvas id="chMix" aria-label="Composición de los datos de prueba"></canvas></div>
+        <p class="muted">Barras porque se comparan cantidades entre pocas categorías.</p>
+      </div>
+      <div class="panel">
+        <h3>Casos límite</h3>
+        <p class="muted">Datos al borde de lo permitido, para probar que el diseño los soporta.</p>
+        <div class="chips">
+          <span class="chip">post de exactamente 280 caracteres</span><span class="chip">post solo con imagen, sin texto</span><span class="chip">post con 4 medios</span><span class="chip">encuesta de 2 opciones</span><span class="chip">post con 10 hashtags</span><span class="chip">post editado 3 veces</span><span class="chip">usuario sin posts ni seguidores</span><span class="chip">alias de 15 caracteres</span><span class="chip">hilo de varios niveles</span>
+        </div>
+      </div>
+    </div>
+    <div class="grid2">
+      <details><summary>Fragmento del validador de usuarios (01_crear_colecciones.js)</summary><div>
+<pre>db.createCollection("usuarios", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["alias", "email", "nombre_visible", "fecha_registro",
+                 "verificado", "configuracion", "contadores"],
+      properties: {
+        alias:          { bsonType: "string", minLength: 3, maxLength: 15 },
+        email:          { bsonType: "string", pattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$" },
+        nombre_visible: { bsonType: "string", minLength: 1, maxLength: 50 },
+        biografia:      { bsonType: "string", maxLength: 160 },
+        ...
+      }
+    }
+  },
+  validationLevel: "strict",
+  validationAction: "error"
+});</pre></div></details>
+      <details><summary>Los 13 índices</summary><div><div class="tw"><table>
+        <thead><tr><th>Colección</th><th>Índices</th><th>Para qué</th></tr></thead><tbody>
+        <tr><td>usuarios</td><td>alias (único), email (único)</td><td>No repetir cuentas</td></tr>
+        <tr><td>posts</td><td>autor + fecha, conversación + fecha, hashtags + fecha, fecha, post respondido, texto, ubicación</td><td>Perfil, timeline, hilos, tendencias, búsqueda por texto y cercanía</td></tr>
+        <tr><td>seguimientos</td><td>seguidor + seguido (único), seguido</td><td>No seguir dos veces; listar seguidores</td></tr>
+        <tr><td>interacciones</td><td>usuario + post + tipo (único), post + tipo</td><td>No repetir me gusta ni votos</td></tr>
+      </tbody></table></div></div></details>
+    </div>
+  </section>
+
+  <!-- ================= 5.3 ================= -->
+  <section class="view" id="v-consultas" hidden>
+    <div class="head">
+      <span class="eyebrow">Etapa 5.3 · Consultas MongoDB</span>
+      <h2>Doce preguntas reales a la red social</h2>
+      <p class="lede">Qué es popular, qué es tendencia, qué ve cada usuario en su timeline y cómo se arma un hilo. <b>find</b> filtra documentos; <b>aggregate</b> encadena etapas que filtran, agrupan, ordenan o unen colecciones.</p>
+      <p class="consigna"><b>Consigna:</b> al menos 10 consultas distintas, cada una con objetivo, comando y resultado esperado, cubriendo comparación, operadores lógicos, anidados, arreglos, proyección, agregación y agrupamiento.</p>
+    </div>
+    <div class="panel">
+      <div class="qsel" id="qsel" role="group" aria-label="Elegir consulta"></div>
+      <div class="head">
+        <span class="eyebrow" id="qtipo"></span>
+        <h3 id="qtit"></h3>
+        <p id="qobj" class="lede"></p>
+      </div>
+      <div class="grid2">
+        <div style="display:flex;flex-direction:column;gap:8px;min-width:0"><span class="lbl">Comando</span><pre id="qcod"></pre></div>
+        <div style="display:flex;flex-direction:column;gap:8px;min-width:0"><span class="lbl">Resultado (evidencia de ejecución)</span><div class="tw" id="qres"></div><p class="muted" id="qnota"></p></div>
+      </div>
+    </div>
+    <p class="muted">Las consultas que dependen de "ahora" usan una fecha fija, <code>AHORA = 21/10/2026 12:00 UTC</code>, para que el resultado sea reproducible. En la app real sería <code>new Date()</code>.</p>
+  </section>
+
+  <!-- ================= 5.4 ================= -->
+  <section class="view" id="v-api" hidden>
+    <div class="head">
+      <span class="eyebrow">Etapa 5.4 · API, repositorios y CRUD</span>
+      <h2>Ninguna app toca la base directamente</h2>
+      <p class="lede">La API recibe los pedidos, los revisa y es la única que habla con MongoDB. Está hecha en Python con FastAPI y separada en capas, cada una con una sola responsabilidad.</p>
+      <p class="consigna"><b>Consigna:</b> administrar la entidad principal con CRUD, capa de repositorios, validación, ids inexistentes, códigos HTTP adecuados y pruebas.</p>
+    </div>
+    <div class="panel">
+      <h3>El camino de un pedido</h3>
+      <div class="flow">
+        <div class="node"><small>cliente</small><b>Pedido</b>POST /posts</div><span class="arr">→</span>
+        <div class="node"><small>main.py</small><b>API</b>rutas y códigos HTTP</div><span class="arr">→</span>
+        <div class="node"><small>modelos.py</small><b>Modelos</b>formato (Pydantic)</div><span class="arr">→</span>
+        <div class="node"><small>servicio_posts.py</small><b>Servicio</b>reglas de negocio</div><span class="arr">→</span>
+        <div class="node"><small>repositorio_posts.py</small><b>Repositorio</b>único que habla con Mongo</div><span class="arr">→</span>
+        <div class="node db"><small>database.py</small><b>MongoDB</b>base twitter</div>
+      </div>
+      <p class="answer">Si mañana cambia la base de datos, solo se reescribe el repositorio. Si cambia una regla, solo se toca el servicio.</p>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <h3>Cinco endpoints</h3>
+        <div class="tw"><table><thead><tr><th>Método</th><th>Ruta</th><th>Qué hace</th><th class="num">Éxito</th></tr></thead><tbody>
+          <tr><td><code>POST</code></td><td><code>/posts</code></td><td>Publicar</td><td class="num">201</td></tr>
+          <tr><td><code>GET</code></td><td><code>/posts/{id}</code></td><td>Ver uno</td><td class="num">200</td></tr>
+          <tr><td><code>PATCH</code></td><td><code>/posts/{id}</code></td><td>Editar (solo lo que cambia)</td><td class="num">200</td></tr>
+          <tr><td><code>DELETE</code></td><td><code>/posts/{id}</code></td><td>Eliminar</td><td class="num">204</td></tr>
+          <tr><td><code>GET</code></td><td><code>/posts</code></td><td>Listar con filtros</td><td class="num">200</td></tr>
+        </tbody></table></div>
+        <p class="muted">PATCH y no PUT: al editar solo se mandan los campos que cambian.</p>
+      </div>
+      <div class="panel">
+        <h3>Validación en tres niveles</h3>
+        <div class="tw"><table><thead><tr><th>Nivel</th><th>Revisa</th><th class="num">Error</th></tr></thead><tbody>
+          <tr><td>Pydantic (modelos)</td><td>Formato, tipos, obligatorios, límites (280 caracteres, 1 a 4 medios)</td><td class="num">422</td></tr>
+          <tr><td>Servicio</td><td>Reglas de negocio: no ser respuesta y cita a la vez, tener texto o medios</td><td class="num">400</td></tr>
+          <tr><td>Servicio</td><td>Que el post o el usuario existan</td><td class="num">404</td></tr>
+          <tr><td>MongoDB</td><td>Validador $jsonSchema de la 5.2, como última barrera</td><td class="num">400</td></tr>
+        </tbody></table></div>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <h3>Pruebas en Swagger (/docs)</h3>
+        <div class="tw"><table><thead><tr><th>Prueba</th><th class="num">Código</th></tr></thead><tbody>
+          <tr><td>Crear un post</td><td class="num">201</td></tr>
+          <tr><td>Buscarlo por id</td><td class="num">200</td></tr>
+          <tr><td>Buscar un id que no existe</td><td class="num">404</td></tr>
+          <tr><td>Mandar un post sin autor</td><td class="num">422</td></tr>
+          <tr><td>Mandar un post vacío</td><td class="num">400</td></tr>
+          <tr><td>Eliminarlo</td><td class="num">204</td></tr>
+        </tbody></table></div>
+        <p class="muted">Aprendizaje: las pruebas dejaron posts en la base y los resultados dejaron de coincidir. Se detectaron porque sus ids no empezaban con 6651, se borraron y se corrigieron los contadores.</p>
+      </div>
+      <details open><summary>Las rutas en main.py</summary><div>
+<pre>@app.exception_handler(servicio.NoEncontrado)
+def manejar_no_encontrado(request, error):
+    return JSONResponse(status_code=404, content={"error": str(error)})
+
+@app.exception_handler(servicio.ReglaNoCumplida)
+def manejar_regla(request, error):
+    return JSONResponse(status_code=400, content={"error": str(error)})
+
+@app.post("/posts", status_code=201, summary="Publicar un post")
+def crear_post(datos: PostNuevo):
+    return servicio.crear_post(datos)
+
+@app.get("/posts/{post_id}", summary="Obtener un post por su id")
+def obtener_post(post_id: str):
+    return servicio.obtener_post(post_id)
+
+@app.patch("/posts/{post_id}", summary="Editar un post")
+def editar_post(post_id: str, cambios: PostCambios):
+    return servicio.editar_post(post_id, cambios)
+
+@app.delete("/posts/{post_id}", status_code=204, summary="Eliminar un post")
+def eliminar_post(post_id: str):
+    servicio.eliminar_post(post_id)</pre></div></details>
+    </div>
+  </section>
+
+  <!-- ================= 5.5 ================= -->
+  <section class="view" id="v-indices" hidden>
+    <div class="head">
+      <span class="eyebrow">Etapa 5.5 · Índices y rendimiento</span>
+      <h2>De recorrer toda la colección a ir directo</h2>
+      <p class="lede">Sin índice, MongoDB lee todos los documentos (<b>COLLSCAN</b>). Con índice va directo a los que sirven (<b>IXSCAN</b>). Lo medimos con <code>explain("executionStats")</code> sobre una copia de posts sin índices.</p>
+      <p class="consigna"><b>Consigna:</b> al menos dos índices, por qué, explain con executionStats, uso observado, y beneficio contra costo.</p>
+    </div>
+    <div class="panel">
+      <div class="toolbar">
+        <h3>Documentos examinados, sin y con índice</h3>
+        <div class="legend"><span><i style="background:var(--sin)"></i>sin índice</span><span><i style="background:var(--con)"></i>con índice</span></div>
+      </div>
+      <div class="chartbox tall"><canvas id="chExplain" aria-label="Documentos examinados por consulta"></canvas></div>
+      <p class="muted">Barras horizontales agrupadas: se compara el mismo valor en dos situaciones para cada consulta. Como hay pocos datos, todas tardan menos de 1 ms, así que se comparan documentos leídos y no tiempos. Las búsquedas por cercanía y por texto directamente dan error sin índice.</p>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <h3>Uso observado ($indexStats)</h3>
+        <div class="chartbox short"><canvas id="chUsos" aria-label="Usos de cada índice"></canvas></div>
+        <p class="answer">El más usado es <b>posts_de_un_autor</b> (perfil y timeline). El índice <b>hilo</b> no lo usó ninguna consulta: sería el primero en eliminarse.</p>
+      </div>
+      <div class="panel">
+        <h3>El costo: 20.000 posts de prueba</h3>
+        <div class="tw"><table><thead><tr><th>Operación</th><th class="num">Sin índices</th><th class="num">Con índices</th></tr></thead><tbody>
+          <tr><td>Insertar 20.000 posts</td><td class="num">520 ms</td><td class="num">1.144 ms</td></tr>
+          <tr><td>Sumar un me gusta a cada uno</td><td class="num">241 ms</td><td class="num">367 ms</td></tr>
+          <tr><td>Espacio</td><td class="num">datos 2.352 KB</td><td class="num">índices 2.340 KB</td></tr>
+        </tbody></table></div>
+        <p class="answer">Insertar fue 2,2 veces más lento y los índices ocupan casi lo mismo que los datos. Por eso <b>no se indexan los contadores</b>: cambian con cada me gusta.</p>
+        <h3>Dos índices nuevos</h3>
+        <ul class="clean">
+          <li><code>posts_por_alias</code>: la API lista por alias. 200 → 6 documentos.</li>
+          <li><code>encuestas_por_estado</code>: consulta 4 y cierre de encuestas. 200 → 3.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 5.6 ================= -->
+  <section class="view" id="v-transacciones" hidden>
+    <div class="head">
+      <span class="eyebrow">Etapa 5.6 · Consistencia y transacciones</span>
+      <h2>Votar: dos escrituras que van juntas o no van</h2>
+      <p class="lede">Votar guarda el voto en <b>interacciones</b> y suma 1 dentro del <b>post</b>. Si la segunda escritura falla, la encuesta queda mal contada y el usuario no puede volver a votar, porque el índice único se lo impide.</p>
+      <p class="consigna"><b>Consigna:</b> una operación donde importe la consistencia, qué pasa si falla a la mitad, y resolverla con operación atómica o transacción.</p>
+    </div>
+    <div class="panel">
+      <div class="toolbar">
+        <h3>Simulación paso a paso</h3>
+        <div class="seg" id="txmodo" role="group" aria-label="Modo"><button aria-pressed="true" data-m="sin">Sin transacción</button><button aria-pressed="false" data-m="con">Con transacción</button></div>
+      </div>
+      <p class="muted">Encuesta "¿Mate dulce o amargo?" con 5 votos. Un usuario vota y la conexión se corta antes de terminar. Los números son los de evidencia_transacciones.txt.</p>
+      <div class="sim">
+        <div class="box" id="bxInter"><small>interacciones · votos guardados</small><b id="nInter">5</b></div>
+        <div class="box" id="bxPost"><small>post · encuesta.total_votos</small><b id="nPost">5</b></div>
+      </div>
+      <ol class="steplog" id="txlog"></ol>
+      <div class="state wait" id="txestado">Estado inicial: consistente.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="txsig" type="button">Siguiente paso</button><button class="btn ghost" id="txreset" type="button">Reiniciar</button></div>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <h3>La transacción (mongosh)</h3>
+<pre>sesion.withTransaction(() =&gt; {
+  const s = sesion.getDatabase("twitter");
+  s.interacciones.insertOne({ tipo: "voto", usuario_id: usuarioId,
+                              post_id: postId, opcion: opcion, fecha: new Date() });
+  const res = s.posts.updateOne(
+    { _id: postId, "encuesta.cerrada": false,
+      ["encuesta.opciones." + opcion]: { $exists: true } },
+    { $inc: { ["encuesta.opciones." + opcion + ".votos"]: 1,
+              "encuesta.total_votos": 1 } }
+  );
+  if (res.modifiedCount === 0)
+    throw new Error("la encuesta está cerrada o la opción no existe");
+});</pre>
+        <p class="muted">Solo funciona en un <b>replica set</b>. En una instancia sola MongoDB la rechaza; por eso se probó también en un replica set de un nodo.</p>
+      </div>
+      <div class="panel">
+        <h3>Resultados de las pruebas</h3>
+        <div class="tw"><table><thead><tr><th>Caso</th><th>Resultado</th><th class="num">Post</th><th class="num">Inter.</th></tr></thead><tbody>
+          <tr><td>Sin transacción, falla la 2.ª escritura</td><td class="badtxt">inconsistente</td><td class="num">5</td><td class="num">6</td></tr>
+          <tr><td>Con transacción, falla después de escribir</td><td class="ok">se deshace</td><td class="num">5</td><td class="num">5</td></tr>
+          <tr><td>Voto válido</td><td class="ok">confirmada</td><td class="num">6</td><td class="num">6</td></tr>
+          <tr><td>El mismo usuario vota otra vez</td><td class="ok">cancelada (índice único)</td><td class="num">6</td><td class="num">6</td></tr>
+          <tr><td>Encuesta cerrada</td><td class="ok">cancelada</td><td class="num">5</td><td class="num">5</td></tr>
+          <tr><td>Transacción en instancia sola</td><td class="ok">rechazada</td><td class="num">5</td><td class="num">5</td></tr>
+        </tbody></table></div>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <h3>El contraste: editar un post</h3>
+        <p>Guardar el texto anterior, poner el nuevo, marcar editado y controlar los 30 minutos pasa todo <b>dentro del mismo documento</b>. Alcanza con un solo <code>updateOne</code>, que MongoDB aplica completo o no aplica.</p>
+<pre>db.posts.updateOne(
+  { _id: postId, fecha: { $gte: limite } },
+  [{ $set: {
+      ediciones: { $concatArrays: [{ $ifNull: ["$ediciones", []] },
+                                   [{ texto: "$texto", fecha: "$$NOW" }]] },
+      texto: textoNuevo,
+      editado: true
+  } }]
+);</pre>
+      </div>
+      <div class="panel">
+        <h3>Por qué no usamos transacciones en todo</h3>
+        <div class="tw"><table><thead><tr><th>Operación</th><th>Solución</th></tr></thead><tbody>
+          <tr><td>Votar en una encuesta</td><td>Transacción</td></tr>
+          <tr><td>Editar un post</td><td>Operación atómica</td></tr>
+          <tr><td>Cerrar una encuesta vencida</td><td>Operación atómica</td></tr>
+          <tr><td>Dar me gusta</td><td>Sin transacción</td></tr>
+        </tbody></table></div>
+        <p class="answer">Hacen más lenta cada escritura. Un me gusta desfasado en 1 no afecta a nadie y se recalcula; un voto mal contado cambia el resultado.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 5.7 ================= -->
+  <section class="view" id="v-analisis" hidden>
+    <div class="head">
+      <span class="eyebrow">Etapa 5.7 · Análisis de datos</span>
+      <h2>Qué nos dicen los datos de la red social</h2>
+      <p class="lede">Notebook de Jupyter con PyMongo, pandas y matplotlib: conexión con proyección, aplanado de subdocumentos, fechas a hora argentina y posts ocultos afuera. Quedaron 199 posts.</p>
+      <p class="consigna"><b>Consigna:</b> conectarse, preparar los datos, al menos 3 indicadores y 2 gráficos, interpretar y concluir con una recomendación.</p>
+    </div>
+    <p class="muted">Los datos son de prueba (generados en la 5.2): los números muestran el método. Con datos reales, el mismo notebook daría las conclusiones reales.</p>
+    <div class="panel">
+      <div class="toolbar"><h3>1 · Actividad por día</h3><div class="legend"><span><i style="background:var(--s1)"></i>posts publicados</span><span><i style="background:var(--s2)"></i>interacciones</span></div></div>
+      <div class="chartbox"><canvas id="chDia" aria-label="Posts e interacciones por día"></canvas></div>
+      <p class="answer">9 posts por día en promedio. La tarde (12 a 18 h) concentra 63 de 199 posts, el 32 %. Las interacciones saltan a 33 el 21/10: la gente interactúa con lo nuevo. Líneas porque es una evolución en el tiempo.</p>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <h3>2 · Rendimiento por formato</h3>
+        <div class="seg" id="fmtsel" role="group" aria-label="Medida"><button aria-pressed="true" data-m="mg">Me gusta promedio</button><button aria-pressed="false" data-m="tasa">Tasa de interacción %</button></div>
+        <div class="chartbox short"><canvas id="chFmt" aria-label="Rendimiento por formato"></canvas></div>
+        <p class="answer">Las encuestas reciben 1,4 me gusta promedio, más del triple que los posts de solo texto (0,42). Ojo: son solo 5 encuestas.</p>
+      </div>
+      <div class="panel">
+        <h3>3 · Hashtags más usados</h3>
+        <div class="chartbox short"><canvas id="chHash" aria-label="Hashtags más usados"></canvas></div>
+        <p class="answer">149 de 199 posts usan hashtags. #mongodb es el más usado y el que más gusta; #mate es segundo en uso pero recibe 4 me gusta.</p>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <h3>4 · Concentración de la audiencia</h3>
+        <div class="chartbox short"><canvas id="chAud" aria-label="Seguidores de las 5 cuentas más grandes contra el resto"></canvas></div>
+        <p class="answer">100 seguimientos, 3,3 por cuenta en promedio, pero las 5 cuentas más grandes tienen el <b>41 %</b>. Dona porque son partes de un total.</p>
+      </div>
+      <div class="panel">
+        <h3>Recomendaciones</h3>
+        <ol class="clean">
+          <li><b>Impulsar las encuestas:</b> es el formato con más interacción.</li>
+          <li><b>Tendencias por reacción:</b> combinar cantidad de posts con me gusta, no solo cantidad.</li>
+          <li><b>"A quién seguir":</b> recomendar también cuentas chicas para repartir la audiencia.</li>
+          <li><b>Mantenimiento de madrugada:</b> es la franja con menos actividad.</li>
+        </ol>
+        <p class="muted">El análisis aprovecha el diseño de la 5.1: los contadores precalculados evitan contar en seguimientos, y los hashtags como arreglo se separan con <code>explode</code>, igual que <code>$unwind</code>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 5.8 ================= -->
+  <section class="view" id="v-docker" hidden>
+    <div class="head">
+      <span class="eyebrow">Etapa 5.8 · Docker Compose</span>
+      <h2>Todo el proyecto con un solo comando</h2>
+      <p class="lede">Dos contenedores: la base y la API. La primera vez, MongoDB crea el usuario de la API y carga los 470 documentos con los scripts de la 5.2. Nadie tiene que instalar MongoDB ni Python a mano.</p>
+      <p class="consigna"><b>Consigna:</b> levantar el entorno con Docker Compose, con persistencia de datos y la API conectada a la base por el nombre del servicio.</p>
+    </div>
+    <div class="panel">
+      <h3>Cómo está armado</h3>
+      <div class="dock">
+        <div class="host">
+          <span class="lbl">Tu computadora</span>
+          <div class="ctr"><b>localhost:8000/docs</b><span class="muted">Swagger en el navegador</span></div>
+          <div class="ctr"><b>localhost:27017</b><span class="muted">Compass, mongosh</span></div>
+          <div class="ctr"><b>.env</b><span class="muted">usuarios, contraseñas y puertos (no se sube)</span></div>
+        </div>
+        <div class="net">
+          <span class="lbl">Red interna de Docker Compose · proyecto "twitter"</span>
+          <div class="row">
+            <div class="ctr"><span class="lbl">servicio api</span><b>twitter-api</b><span>FastAPI + Uvicorn, puerto 8000</span><span class="muted">Se conecta a <code>mongo:27017</code> con el usuario twitter_api</span></div>
+            <div class="ctr"><span class="lbl">servicio mongo</span><b>twitter-mongo</b><span>mongo:8.0, puerto 27017</span><span class="muted">healthcheck cada 10 s</span></div>
+          </div>
+          <div class="row">
+            <div class="ctr"><span class="lbl">primera vez</span><b>docker/mongo-init</b><span class="muted">01: crea el usuario de la API · 02: corre cargar_todo.js</span></div>
+            <div class="ctr"><span class="lbl">volumen</span><b>mongo_datos</b><span class="muted">los datos sobreviven a <code>docker compose down</code></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <h3>Decisiones</h3>
+        <ul class="clean">
+          <li><b>"mongo" y no "localhost":</b> dentro de un contenedor, localhost es el propio contenedor. Compose crea una red donde cada servicio se encuentra por su nombre.</li>
+          <li><b>Volumen:</b> los datos viven fuera del contenedor.</li>
+          <li><b>Healthcheck:</b> la API arranca recién cuando MongoDB responde.</li>
+          <li><b>Dos usuarios:</b> el administrador y uno de la API, con permiso solo sobre la base twitter.</li>
+          <li><b>Carga reproducible:</b> reutiliza los scripts de la 5.2.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>Comandos</h3>
+        <div class="cmd"><pre>docker compose up -d --build</pre><button class="iconbtn" type="button" data-copy="docker compose up -d --build">Copiar</button></div>
+        <div class="cmd"><pre>docker compose ps</pre><button class="iconbtn" type="button" data-copy="docker compose ps">Copiar</button></div>
+        <div class="cmd"><pre>docker compose down       # apaga, conserva los datos
+docker compose down -v    # apaga y borra el volumen</pre><button class="iconbtn" type="button" data-copy="docker compose down -v">Copiar</button></div>
+        <details><summary>Fragmento de docker-compose.yml</summary><div>
+<pre>name: twitter
+services:
+  mongo:
+    image: mongo:8.0
+    container_name: twitter-mongo
+    volumes:
+      - mongo_datos:/data/db
+      - ./docker/mongo-init:/docker-entrypoint-initdb.d:ro
+      - ./scripts-5.2:/scripts:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+  api:
+    build: ./api
+    container_name: twitter-api
+    environment:
+      MONGO_URL: mongodb://${MONGO_APP_USER}:${MONGO_APP_PASSWORD}@mongo:27017/${MONGO_DB:-twitter}?authSource=admin
+    depends_on:
+      mongo:
+        condition: service_healthy
+volumes:
+  mongo_datos:</pre></div></details>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Pruebas (1/11/2026)</h3>
+      <div class="grid2">
+        <figure><img src="img/conteo-documentos.png" alt="Terminal con el conteo: usuarios 30, posts 200, seguimientos 100, interacciones 140" loading="lazy"><figcaption>Los 470 documentos cargados solos dentro de twitter-mongo.</figcaption></figure>
+        <figure><img src="img/docker-compose-ps.png" alt="docker compose ps: twitter-api y twitter-mongo en estado Up, mongo healthy" loading="lazy"><figcaption>Los dos contenedores funcionando; MongoDB en estado healthy.</figcaption></figure>
+      </div>
+      <p class="muted">Además, GET /posts en Swagger respondió 200 con los posts de la carga (ids que empiezan con 6651).</p>
+    </div>
+  </section>
+
+  <!-- ================= CIERRE ================= -->
+  <section class="view" id="v-cierre" hidden>
+    <div class="head">
+      <span class="eyebrow">Cierre</span>
+      <h2>La idea que une todo el trabajo</h2>
+      <p class="lede">En una red social se lee muchísimo más de lo que se escribe. Por eso embebemos y copiamos datos, guardamos contadores y creamos índices, aceptando que escribir sea un poco más trabajoso. Solo donde un error sería grave, como en los votos, pagamos el costo de una transacción.</p>
+    </div>
+    <div class="tw"><table><thead><tr><th>Etapa</th><th>Qué hicimos</th><th>Con qué</th></tr></thead><tbody>
+      <tr><td>5.1</td><td>4 colecciones; embeber contra referenciar</td><td>Documento de diseño</td></tr>
+      <tr><td>5.2</td><td>Base creada y cargada con 470 documentos, 0 errores</td><td>Compass y scripts JS</td></tr>
+      <tr><td>5.3</td><td>12 consultas</td><td>find y aggregate</td></tr>
+      <tr><td>5.4</td><td>API CRUD de posts en capas</td><td>FastAPI, Pydantic, PyMongo, Swagger</td></tr>
+      <tr><td>5.5</td><td>Índices medidos con explain</td><td>explain, $indexStats</td></tr>
+      <tr><td>5.6</td><td>Transacción al votar, atómica al editar</td><td>Replica set</td></tr>
+      <tr><td>5.7</td><td>4 indicadores y recomendaciones</td><td>Jupyter, pandas, matplotlib</td></tr>
+      <tr><td>5.8</td><td>Entorno reproducible</td><td>Docker Compose</td></tr>
+    </tbody></table></div>
+    <div class="panel">
+      <h3>Preguntas probables</h3>
+      <details><summary>¿Por qué MongoDB y no una base relacional?</summary><div><p>Los posts son heterogéneos, se leen completos de una vez y la plataforma cambia seguido. En relacional habría muchas tablas, JOIN y columnas vacías.</p></div></details>
+      <details><summary>¿Por qué los me gusta van en una colección aparte?</summary><div><p>Pueden ser miles por post y un documento tiene un límite de 16 MB. Además, un índice único impide que alguien dé dos me gusta. En el post guardamos solo el número.</p></div></details>
+      <details><summary>Si MongoDB no tiene esquema, ¿para qué el validador?</summary><div><p>Para exigir reglas mínimas (obligatorios, tipos, límites) sin perder la flexibilidad de los campos opcionales.</p></div></details>
+      <details><summary>¿Qué hacen $lookup y $graphLookup?</summary><div><p>$lookup une dos colecciones, como un JOIN (timeline). $graphLookup lo hace de forma recursiva: respuestas de respuestas (hilo).</p></div></details>
+      <details><summary>¿Por qué no indexan los contadores?</summary><div><p>Cambian con cada me gusta y cada cambio obligaría a actualizar el índice. Dar me gusta es mucho más frecuente que buscar posts populares.</p></div></details>
+      <details><summary>¿Por qué la transacción necesita un replica set?</summary><div><p>MongoDB implementa las transacciones sobre la replicación. Una instancia sola las rechaza.</p></div></details>
+      <details><summary>¿Por qué la API usa "mongo" y no "localhost" en Docker?</summary><div><p>Cada contenedor es una máquina aparte: localhost sería el contenedor de la API. Compose crea una red donde los servicios se encuentran por su nombre.</p></div></details>
+    </div>
+  </section>
+  </main>
+</div>
+
+<div class="presbar">
+  <button class="iconbtn" id="prev" type="button" aria-label="Etapa anterior">← Anterior</button>
+  <button class="iconbtn" id="next" type="button" aria-label="Etapa siguiente">Siguiente →</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+// ---------- Grupo: escribir acá los integrantes (si queda vacío, no se muestra) ----------
+const GRUPO = "";
+if (GRUPO) { const g = document.getElementById("grupo"); g.textContent = GRUPO; g.hidden = false; }
+
+// ---------- Navegación entre etapas (una por pantalla, guardada en el #) ----------
+const VISTAS = ["inicio","diseno","carga","consultas","api","indices","transacciones","analisis","docker","cierre"];
+const graficosHechos = {};
+function mostrar(v) {
+  if (!VISTAS.includes(v)) v = "inicio";
+  VISTAS.forEach(x => { document.getElementById("v-" + x).hidden = x !== v; });
+  document.querySelectorAll("#steps button").forEach(b => b.setAttribute("aria-current", b.dataset.v === v ? "true" : "false"));
+  document.getElementById("prev").disabled = v === VISTAS[0];
+  document.getElementById("next").disabled = v === VISTAS[VISTAS.length - 1];
+  window.scrollTo(0, 0);
+  dibujarGraficos(v);
+}
+function ir(v) { if (location.hash !== "#" + v) location.hash = v; else mostrar(v); }
+document.querySelectorAll("#steps button").forEach(b => b.addEventListener("click", () => ir(b.dataset.v)));
+document.querySelectorAll("[data-go]").forEach(b => b.addEventListener("click", () => ir(b.dataset.go)));
+window.addEventListener("hashchange", () => mostrar(location.hash.slice(1)));
+function mover(d) { const i = VISTAS.indexOf(location.hash.slice(1) || "inicio"); const j = Math.min(Math.max((i < 0 ? 0 : i) + d, 0), VISTAS.length - 1); ir(VISTAS[j]); }
+document.getElementById("prev").addEventListener("click", () => mover(-1));
+document.getElementById("next").addEventListener("click", () => mover(1));
+document.addEventListener("keydown", e => {
+  if (e.target.closest("input,textarea,select")) return;
+  if (e.key === "ArrowRight" || e.key === "PageDown") { mover(1); e.preventDefault(); }
+  if (e.key === "ArrowLeft" || e.key === "PageUp") { mover(-1); e.preventDefault(); }
+});
+
+// ---------- Tema claro / oscuro ----------
+const raiz = document.documentElement;
+try { const t = localStorage.getItem("tema"); if (t) raiz.dataset.theme = t; } catch (e) {}
+document.getElementById("tema").addEventListener("click", () => {
+  const oscuroAhora = raiz.dataset.theme ? raiz.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  raiz.dataset.theme = oscuroAhora ? "light" : "dark";
+  try { localStorage.setItem("tema", raiz.dataset.theme); } catch (e) {}
+  rehacerGraficos();
+});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", rehacerGraficos);
+
+// ---------- Botones de copiar ----------
+document.querySelectorAll("[data-copy]").forEach(b => b.addEventListener("click", () => {
+  const txt = b.dataset.copy;
+  navigator.clipboard.writeText(txt).then(() => { b.textContent = "Copiado"; setTimeout(() => b.textContent = "Copiar", 1500); })
+    .catch(() => { const r = document.createRange(); r.selectNodeContents(b.previousElementSibling); const s = getSelection(); s.removeAllRanges(); s.addRange(r); });
+}));
+
+// ---------- 5.1: relaciones que resaltan campos en el diagrama ----------
+let relActiva = null;
+document.querySelectorAll("#rels tr.rel").forEach(tr => tr.addEventListener("click", () => {
+  const k = tr.dataset.k, mismo = relActiva === tr;
+  document.querySelectorAll("#rels tr.rel").forEach(x => x.classList.remove("on"));
+  document.querySelectorAll("#colls li").forEach(li => li.classList.remove("hl"));
+  relActiva = mismo ? null : tr;
+  if (!mismo) { tr.classList.add("on"); document.querySelectorAll('#colls li[data-k="' + k + '"]').forEach(li => li.classList.add("hl")); }
+}));
+document.querySelectorAll("#relfiltro button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("#relfiltro button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+  const f = b.dataset.f;
+  document.querySelectorAll("#rels tr.rel").forEach(tr => { tr.hidden = !(f === "todas" || tr.dataset.t === f); });
+}));
+
+// ---------- 5.3: las 12 consultas (código del proyecto y resultados de evidenca_consultas.txt) ----------
+const CONSULTAS = [
+ {id:"1", tipo:"Comparación · find", tit:"Posts más populares", obj:"Posts con 5 o más me gusta, ordenados de más a menos.",
+  cod:`db.posts.find(
+  { "contadores.me_gusta": { $gte: 5 } },
+  { _id: 0, "autor.alias": 1, texto: 1, "contadores.me_gusta": 1 }
+).sort({ "contadores.me_gusta": -1, fecha: 1 });`,
+  cols:["autor","texto","me gusta"], filas:[["martin.foto","Atardecer en el Monumento a la Bandera #Rosario",10],["lucia_dev","Arranqué el TP de #MongoDB y ya entendí por qué…",8],["santi_code","¿Conviene embeber los comentarios dentro del post?",6],["datosarg","¿Qué base de datos usan en su laburo?",6]], nota:"4 resultados."},
+ {id:"2", tipo:"Comparación · find", tit:"Cuentas nuevas en crecimiento", obj:"Usuarios registrados desde 2025 con 3 o más seguidores.",
+  cod:`db.usuarios.find(
+  { fecha_registro: { $gte: ISODate("2025-01-01T00:00:00Z") },
+    "contadores.seguidores": { $gte: 3 } },
+  { _id: 0, alias: 1, fecha_registro: 1, "contadores.seguidores": 1 }
+).sort({ "contadores.seguidores": -1, alias: 1 });`,
+  cols:["alias","registro","seguidores"], filas:[["gonza.dj","2025-04-01",6],["mati.lluvia","2025-12-24",4],["datosarg","2025-04-04",3],["nico_futbol","2025-08-08",3],["santi_code","2025-04-16",3]], nota:"5 resultados."},
+ {id:"3", tipo:"Operadores lógicos · $and $or $ne", tit:"#mongodb o #basesdedatos", obj:"Posts sobre bases de datos con al menos un me gusta y que no estén ocultos.",
+  cod:`db.posts.find(
+  { $and: [
+      { $or: [{ hashtags: "mongodb" }, { hashtags: "basesdedatos" }] },
+      { "contadores.me_gusta": { $gte: 1 } },
+      { oculto: { $ne: true } }
+  ] },
+  { _id: 0, "autor.alias": 1, texto: 1, hashtags: 1, "contadores.me_gusta": 1 }
+).sort({ "contadores.me_gusta": -1, fecha: 1 });`,
+  cols:["autor","hashtags","me gusta"], filas:[["lucia_dev","mongodb, basesdedatos",8],["santi_code","mongodb",6],["flor.viajes","mongodb, tp",2],["nico_futbol","mongodb",1],["…","4 más con 1 me gusta",""]], nota:"8 resultados."},
+ {id:"4", tipo:"Atributos anidados", tit:"Encuestas cerradas", obj:"Busca dentro del subdocumento encuesta: cerradas y con 5 o más votos.",
+  cod:`db.posts.find(
+  { "encuesta.cerrada": true, "encuesta.total_votos": { $gte: 5 } },
+  { _id: 0, "autor.alias": 1, texto: 1,
+    "encuesta.opciones.texto": 1, "encuesta.total_votos": 1 }
+).sort({ "encuesta.total_votos": -1, fecha: 1 });`,
+  cols:["autor","pregunta","votos"], filas:[["sofi.mendez","¿Música sí o no?",8],["datosarg","¿Mate dulce o amargo?",5],["rocio_lee","¿MongoDB sí o no?",5]], nota:"3 resultados."},
+ {id:"5", tipo:"Arreglos · $elemMatch $all", tit:"Medios y hashtags", obj:"5a: posts con al menos un GIF o video. 5b: posts con #mongodb y #tp a la vez.",
+  cod:`// 5a
+db.posts.find(
+  { medios: { $elemMatch: { tipo: { $in: ["gif", "video"] } } } },
+  { _id: 0, "autor.alias": 1, texto: 1, "medios.tipo": 1 });
+// 5b
+db.posts.find(
+  { hashtags: { $all: ["mongodb", "tp"] } },
+  { _id: 0, "autor.alias": 1, texto: 1, hashtags: 1 });`,
+  cols:["consulta","autor","resultado"], filas:[["5a","martin.foto","imagen, imagen, gif, video"],["5a","ushuaia_sur","gif"],["5b","flor.viajes","#mongodb #tp"]], nota:"5a: 2 resultados · 5b: 1 resultado."},
+ {id:"6", tipo:"Proyección, orden y límite", tit:"Perfil de un usuario", obj:"Los 3 posts más recientes de lucia_dev, solo con algunos campos.",
+  cod:`db.posts.find(
+  { "autor.usuario_id": LUCIA, oculto: { $ne: true } },
+  { _id: 0, tipo: 1, texto: 1, fecha: 1,
+    "contadores.me_gusta": 1, "contadores.respuestas": 1 }
+).sort({ fecha: -1 }).limit(3);`,
+  cols:["tipo","texto","me gusta"], filas:[["cita","Voté MongoDB, obvio. Esta semana es todo documentos",0],["original","Lo mejor del día: #Viajes",1],["original","Arranqué el TP de #MongoDB…",8]], nota:"3 resultados."},
+ {id:"7", tipo:"Agregación · $unwind $group", tit:"Hashtags en tendencia", obj:"Top 5 hashtags de las últimas 24 horas (respecto de AHORA), desempatando por me gusta.",
+  cod:`db.posts.aggregate([
+  { $match: { fecha: { $gte: new Date(AHORA.getTime() - 24*60*60*1000), $lte: AHORA },
+              hashtags: { $exists: true }, oculto: { $ne: true } } },
+  { $unwind: "$hashtags" },
+  { $group: { _id: "$hashtags", cantidad_posts: { $sum: 1 },
+              total_me_gusta: { $sum: "$contadores.me_gusta" } } },
+  { $sort: { cantidad_posts: -1, total_me_gusta: -1, _id: 1 } },
+  { $limit: 5 },
+  { $project: { _id: 0, hashtag: "$_id", cantidad_posts: 1, total_me_gusta: 1 } }
+]);`,
+  cols:["hashtag","posts","me gusta"], filas:[["mongodb",3,8],["libros",3,3],["devar",2,6],["cine",2,0],["tp",2,0]], nota:"5 resultados."},
+ {id:"8", tipo:"Agregación · $lookup", tit:"Timeline", obj:"Los posts más recientes de las cuentas que sigue lucia_dev: une seguimientos con posts.",
+  cod:`db.seguimientos.aggregate([
+  { $match: { seguidor_id: LUCIA } },
+  { $lookup: { from: "posts", localField: "seguido_id",
+               foreignField: "autor.usuario_id", as: "posts_seguido" } },
+  { $unwind: "$posts_seguido" },
+  { $replaceRoot: { newRoot: "$posts_seguido" } },
+  { $match: { oculto: { $ne: true } } },
+  { $sort: { fecha: -1 } },
+  { $limit: 5 },
+  { $project: { _id: 0, autor: "$autor.alias", tipo: 1, texto: 1, fecha: 1 } }
+]);`,
+  cols:["autor","tipo","texto"], filas:[["santi_code","cita","Esto merece más difusión #Fútbol"],["dami_profe","cita","Esto merece más difusión #Programación"],["santi_code","original","¿Cuál es su opinión sobre #Cine?"],["martin.foto","cita","Miren esto #Libros"],["dami_profe","original","Hoy aprendí algo nuevo sobre #DevAR…"]], nota:"5 resultados."},
+ {id:"9", tipo:"Agrupamiento estadístico", tit:"Estadística por tipo de post", obj:"Cantidad, suma, promedio, máximo y mínimo de me gusta y vistas por tipo.",
+  cod:`db.posts.aggregate([
+  { $match: { oculto: { $ne: true } } },
+  { $group: { _id: "$tipo", cantidad: { $sum: 1 },
+      total_me_gusta: { $sum: "$contadores.me_gusta" },
+      promedio_me_gusta: { $avg: "$contadores.me_gusta" },
+      max_me_gusta: { $max: "$contadores.me_gusta" },
+      promedio_vistas: { $avg: "$contadores.vistas" },
+      max_vistas: { $max: "$contadores.vistas" },
+      min_vistas: { $min: "$contadores.vistas" } } },
+  { $sort: { cantidad: -1 } }
+]);`,
+  cols:["tipo","cantidad","prom. me gusta","prom. vistas"], filas:[["original",130,"0,54","74,5"],["respuesta",45,"0,31","63,7"],["cita",24,"0,29","65,2"]], nota:"3 resultados (sin el post oculto)."},
+ {id:"10", tipo:"Complejidad extra · $graphLookup", tit:"Hilo completo", obj:"Respuestas de respuestas de \"¿Conviene embeber los comentarios dentro del post?\".",
+  cod:`db.posts.aggregate([
+  { $match: { tipo: "original", texto: { $regex: "^¿Conviene embeber" } } },
+  { $graphLookup: { from: "posts", startWith: "$_id",
+      connectFromField: "_id", connectToField: "en_respuesta_a.post_id",
+      as: "respuestas", depthField: "nivel" } },
+  { $unwind: "$respuestas" },
+  { $sort: { "respuestas.nivel": 1, "respuestas.fecha": 1 } }
+]);`,
+  cols:["nivel","responde","a quién"], filas:[[0,"mica.dibuja","santi_code"],[0,"lautaro.ok","santi_code"],[1,"santi_code","mica.dibuja"],[1,"datosarg","mica.dibuja"],[2,"rocio_lee","santi_code"],[2,"bruno.runner","santi_code"],[3,"flor.viajes","bruno.runner"]], nota:"7 respuestas en 4 niveles."},
+ {id:"11", tipo:"Complejidad extra · $unwind con posición", tit:"Opción ganadora", obj:"La opción más votada de cada encuesta y su porcentaje.",
+  cod:`db.posts.aggregate([
+  { $match: { encuesta: { $exists: true } } },
+  { $unwind: { path: "$encuesta.opciones", includeArrayIndex: "posicion" } },
+  { $sort: { _id: 1, "encuesta.opciones.votos": -1, posicion: 1 } },
+  { $group: { _id: "$_id", pregunta: { $first: "$texto" },
+      total_votos: { $first: "$encuesta.total_votos" },
+      ganadora: { $first: "$encuesta.opciones.texto" },
+      votos_ganadora: { $first: "$encuesta.opciones.votos" } } },
+  { $project: { porcentaje: { $round: [{ $multiply: [
+      { $divide: ["$votos_ganadora", "$total_votos"] }, 100] }, 1] } } }
+]);`,
+  cols:["pregunta","ganadora","%"], filas:[["¿Música sí o no?","No","50"],["¿Dónde ven el partido del domingo?","En la cancha","66,7"],["¿Mate dulce o amargo?","Dulce","80"],["¿MongoDB sí o no?","Sí","40"],["¿Qué base de datos usan…?","MongoDB","60"]], nota:"5 encuestas."},
+ {id:"12", tipo:"Complejidad extra · geoespacial", tit:"Posts cerca de un lugar", obj:"Posts publicados a menos de 2 km de la plaza principal de Córdoba.",
+  cod:`db.posts.find(
+  { "ubicacion.coordenadas": { $near: {
+      $geometry: { type: "Point", coordinates: [-64.1888, -31.4201] },
+      $maxDistance: 2000 } } },
+  { _id: 0, "autor.alias": 1, texto: 1,
+    "ubicacion.nombre": 1, "ubicacion.ciudad": 1 }
+);`,
+  cols:["autor","texto","lugar"], filas:[["mica.dibuja","¿Cuál es su opinión sobre #Libros?","Plaza principal"],["sofi.mendez","Terminé con #Cine y ahora a dormir","Plaza principal"],["flor.viajes","Terminé con #MongoDB y ahora a dormir #TP","Plaza principal"]], nota:"3 resultados."}
+];
+const qsel = document.getElementById("qsel");
+function verConsulta(i) {
+  const q = CONSULTAS[i];
+  qsel.querySelectorAll("button").forEach((b, j) => b.setAttribute("aria-pressed", j === i ? "true" : "false"));
+  document.getElementById("qtipo").textContent = "Consulta " + q.id + " · " + q.tipo;
+  document.getElementById("qtit").textContent = q.tit;
+  document.getElementById("qobj").textContent = q.obj;
+  document.getElementById("qcod").textContent = q.cod;
+  const t = document.createElement("table");
+  t.innerHTML = "<thead><tr>" + q.cols.map(c => "<th>" + c + "</th>").join("") + "</tr></thead>";
+  const tb = document.createElement("tbody");
+  q.filas.forEach(f => { const tr = document.createElement("tr"); f.forEach(v => { const td = document.createElement("td"); td.textContent = v; if (typeof v === "number") td.className = "num"; tr.appendChild(td); }); tb.appendChild(tr); });
+  t.appendChild(tb);
+  const box = document.getElementById("qres"); box.innerHTML = ""; box.appendChild(t);
+  document.getElementById("qnota").textContent = q.nota;
+}
+CONSULTAS.forEach((q, i) => { const b = document.createElement("button"); b.type = "button"; b.textContent = q.id; b.title = q.tit; b.addEventListener("click", () => verConsulta(i)); qsel.appendChild(b); });
+verConsulta(0);
+
+// ---------- 5.6: simulación del voto ----------
+const PASOS = {
+  sin: [
+    {txt:"Se guarda el voto en interacciones.", inter:6, post:5, est:["wait","Primera escritura hecha. Falta la segunda."]},
+    {txt:"Se corta la conexión antes de actualizar el post.", inter:6, post:5, est:["bad","Inconsistente: interacciones dice 6 y el post muestra 5. El usuario ya no puede volver a votar."]}
+  ],
+  con: [
+    {txt:"Empieza la transacción y se guarda el voto (todavía sin confirmar).", inter:6, post:5, est:["wait","Dentro de la transacción. Nada es definitivo."]},
+    {txt:"Se suma el voto en el post (todavía sin confirmar).", inter:6, post:6, est:["wait","Las dos escrituras están hechas, falta confirmar."]},
+    {txt:"Falla antes de confirmar: MongoDB deshace todo.", inter:5, post:5, est:["good","Consistente: 5 y 5. No quedó nada a medias y el usuario puede volver a votar."]}
+  ]
+};
+let modo = "sin", paso = 0;
+function pintarTx() {
+  const lista = PASOS[modo];
+  const actual = paso > 0 ? lista[paso - 1] : {inter:5, post:5, est:["wait","Estado inicial: consistente."]};
+  const nI = document.getElementById("nInter"), nP = document.getElementById("nPost");
+  document.getElementById("bxInter").classList.toggle("changed", actual.inter !== 5);
+  document.getElementById("bxPost").classList.toggle("changed", actual.post !== 5);
+  nI.textContent = actual.inter; nP.textContent = actual.post;
+  const log = document.getElementById("txlog"); log.innerHTML = "";
+  lista.forEach((p, i) => { const li = document.createElement("li"); li.textContent = p.txt; li.className = i < paso - 1 ? "done" : (i === paso - 1 ? "now" : ""); log.appendChild(li); });
+  const e = document.getElementById("txestado"); e.className = "state " + actual.est[0]; e.textContent = actual.est[1];
+  document.getElementById("txsig").disabled = paso >= lista.length;
+}
+document.getElementById("txsig").addEventListener("click", () => { if (paso < PASOS[modo].length) { paso++; pintarTx(); } });
+document.getElementById("txreset").addEventListener("click", () => { paso = 0; pintarTx(); });
+document.querySelectorAll("#txmodo button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("#txmodo button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+  modo = b.dataset.m; paso = 0; pintarTx();
+}));
+pintarTx();
+
+// ---------- Gráficos (Chart.js) ----------
+// Datos tomados de la evidencia del proyecto y del notebook analisis_bd.ipynb (verificados contra los scripts de carga).
+const DATOS = {
+  mix: { posts: {l:["original","respuesta","cita"], v:[131,45,24], c:["--s1","--s5","--s4"]},
+         inter: {l:["me gusta","repost","voto"], v:[91,20,29], c:["--s2","--s3","--s7"]} },
+  explain: { l:["6 · Perfil de lucia_dev","3 · #mongodb o #basesdedatos","5b · #mongodb y #tp","7 · Tendencias 24 h","8 · Timeline ($lookup)","API · posts por alias","4 · Encuestas cerradas"],
+             sin:[200,200,200,200,800,200,200], con:[3,30,12,17,33,6,3] },
+  usos: { l:["posts_de_un_autor","respuestas_de_un_post","por_hashtag","por_fecha","por_ubicacion","posts_por_alias","encuestas_por_estado","busqueda_texto","hilo"], v:[9,5,2,2,1,1,1,1,0] },
+  dias: { l:["01/10","02/10","03/10","04/10","05/10","06/10","07/10","08/10","09/10","10/10","11/10","12/10","13/10","14/10","15/10","16/10","17/10","18/10","19/10","20/10","21/10","22/10"],
+          posts:[7,10,12,6,7,13,11,3,8,3,9,10,6,11,12,14,9,14,8,9,12,5],
+          inter:[0,3,9,4,2,1,8,2,3,3,1,7,7,8,6,4,8,9,8,8,33,6] },
+  fmt: { l:["Con encuesta","Con medios","Solo texto"], mg:[1.4,0.49,0.42], tasa:[1.27,0.59,0.75], n:[5,35,159], c:["--s7","--s3","--s1"] },
+  hash: { l:["#mongodb","#mate","#libros","#viajes","#asado","#fútbol","#tp","#lluvia"], posts:[23,18,15,14,13,13,12,11], mg:[20,4,5,9,9,5,4,4] },
+  aud: { l:["martin.foto","lautaro.ok","dami_profe","gonza.dj","tomi.dev","otras 25 cuentas"], v:[18,6,6,6,5,59] }
+};
+const css = n => getComputedStyle(raiz).getPropertyValue(n).trim();
+const charts = {};
+let mixSel = "posts", fmtSel = "mg";
+function base() {
+  Chart.defaults.color = css("--ink-2");
+  Chart.defaults.borderColor = css("--line");
+  Chart.defaults.font.family = css("--f-body");
+}
+const ejes = (extra) => Object.assign({ x:{ grid:{ color: css("--line") } }, y:{ grid:{ color: css("--line") } } }, extra || {});
+const crear = {
+  carga() {
+    const d = DATOS.mix[mixSel];
+    charts.mix = new Chart(document.getElementById("chMix"), { type:"bar",
+      data:{ labels:d.l, datasets:[{ label:"documentos", data:d.v, backgroundColor:d.c.map(css), borderRadius:4 }] },
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales: ejes({ y:{ beginAtZero:true, grid:{ color: css("--line") } } }) } });
+  },
+  indices() {
+    const d = DATOS.explain;
+    charts.explain = new Chart(document.getElementById("chExplain"), { type:"bar",
+      data:{ labels:d.l, datasets:[
+        { label:"sin índice", data:d.sin, backgroundColor:css("--sin"), borderRadius:3 },
+        { label:"con índice", data:d.con, backgroundColor:css("--con"), borderRadius:3 } ] },
+      options:{ indexAxis:"y", responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false },
+        tooltip:{ callbacks:{ label:c => c.dataset.label + ": " + c.raw + " documentos examinados" } } },
+        scales: ejes({ x:{ beginAtZero:true, title:{ display:true, text:"documentos examinados" }, grid:{ color: css("--line") } }, y:{ grid:{ display:false } } }) } });
+    const u = DATOS.usos;
+    charts.usos = new Chart(document.getElementById("chUsos"), { type:"bar",
+      data:{ labels:u.l, datasets:[{ label:"usos", data:u.v, backgroundColor:u.v.map(v => v === 0 ? css("--sin") : css("--con")), borderRadius:3 }] },
+      options:{ indexAxis:"y", responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } },
+        scales: ejes({ x:{ beginAtZero:true, ticks:{ precision:0 }, grid:{ color: css("--line") } }, y:{ grid:{ display:false } } }) } });
+  },
+  analisis() {
+    const d = DATOS.dias;
+    charts.dias = new Chart(document.getElementById("chDia"), { type:"line",
+      data:{ labels:d.l, datasets:[
+        { label:"posts publicados", data:d.posts, borderColor:css("--s1"), backgroundColor:css("--s1"), tension:.25, pointRadius:3 },
+        { label:"interacciones", data:d.inter, borderColor:css("--s2"), backgroundColor:css("--s2"), tension:.25, pointRadius:3 } ] },
+      options:{ responsive:true, maintainAspectRatio:false, interaction:{ mode:"index", intersect:false }, plugins:{ legend:{ display:false } },
+        scales: ejes({ y:{ beginAtZero:true, title:{ display:true, text:"cantidad por día (hora argentina)" }, grid:{ color: css("--line") } } }) } });
+    const f = DATOS.fmt;
+    charts.fmt = new Chart(document.getElementById("chFmt"), { type:"bar",
+      data:{ labels:f.l, datasets:[{ label: fmtSel === "mg" ? "me gusta promedio" : "tasa de interacción %", data:f[fmtSel], backgroundColor:f.c.map(css), borderRadius:4 }] },
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false },
+        tooltip:{ callbacks:{ afterLabel:c => f.n[c.dataIndex] + " posts" } } },
+        scales: ejes({ y:{ beginAtZero:true, grid:{ color: css("--line") } } }) } });
+    const h = DATOS.hash;
+    charts.hash = new Chart(document.getElementById("chHash"), { type:"bar",
+      data:{ labels:h.l, datasets:[{ label:"posts", data:h.posts, backgroundColor:css("--s4"), borderRadius:3 }] },
+      options:{ indexAxis:"y", responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false },
+        tooltip:{ callbacks:{ afterLabel:c => h.mg[c.dataIndex] + " me gusta" } } },
+        scales: ejes({ x:{ beginAtZero:true, title:{ display:true, text:"cantidad de posts" }, grid:{ color: css("--line") } }, y:{ grid:{ display:false } } }) } });
+    const a = DATOS.aud;
+    charts.aud = new Chart(document.getElementById("chAud"), { type:"doughnut",
+      data:{ labels:a.l, datasets:[{ data:a.v, backgroundColor:[css("--s1"),css("--s1"),css("--s1"),css("--s1"),css("--s1"),css("--surface-2")], borderColor:css("--surface"), borderWidth:2 }] },
+      options:{ responsive:true, maintainAspectRatio:false, cutout:"58%", plugins:{ legend:{ position:"right", labels:{ boxWidth:10 } },
+        tooltip:{ callbacks:{ label:c => c.label + ": " + c.raw + " seguidores" } } } } });
+  }
+};
+function dibujarGraficos(v) {
+  if (!window.Chart || !crear[v] || graficosHechos[v]) return;
+  base(); crear[v](); graficosHechos[v] = true;
+}
+function rehacerGraficos() {
+  Object.keys(charts).forEach(k => { charts[k].destroy(); delete charts[k]; });
+  Object.keys(graficosHechos).forEach(k => delete graficosHechos[k]);
+  dibujarGraficos(location.hash.slice(1) || "inicio");
+}
+document.querySelectorAll("#mixsel button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("#mixsel button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+  mixSel = b.dataset.m; if (charts.mix) { charts.mix.destroy(); base(); crear.carga(); }
+}));
+document.querySelectorAll("#fmtsel button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("#fmtsel button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+  fmtSel = b.dataset.m; rehacerGraficos();
+}));
+
+// Arranque: mostrar la etapa del # o el inicio
+mostrar(location.hash.slice(1) || "inicio");
+</script>
+
+</body>
+</html>
