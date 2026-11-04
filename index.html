@@ -817,14 +817,11 @@ volumes:
       <tr><td>5.8</td><td>Entorno reproducible</td><td>Docker Compose</td></tr>
     </tbody></table></div>
     <div class="panel">
-      <h3>Preguntas probables</h3>
-      <details><summary>¿Por qué MongoDB y no una base relacional?</summary><div><p>Los posts son heterogéneos, se leen completos de una vez y la plataforma cambia seguido. En relacional habría muchas tablas, JOIN y columnas vacías.</p></div></details>
-      <details><summary>¿Por qué los me gusta van en una colección aparte?</summary><div><p>Pueden ser miles por post y un documento tiene un límite de 16 MB. Además, un índice único impide que alguien dé dos me gusta. En el post guardamos solo el número.</p></div></details>
-      <details><summary>Si MongoDB no tiene esquema, ¿para qué el validador?</summary><div><p>Para exigir reglas mínimas (obligatorios, tipos, límites) sin perder la flexibilidad de los campos opcionales.</p></div></details>
-      <details><summary>¿Qué hacen $lookup y $graphLookup?</summary><div><p>$lookup une dos colecciones, como un JOIN (timeline). $graphLookup lo hace de forma recursiva: respuestas de respuestas (hilo).</p></div></details>
-      <details><summary>¿Por qué no indexan los contadores?</summary><div><p>Cambian con cada me gusta y cada cambio obligaría a actualizar el índice. Dar me gusta es mucho más frecuente que buscar posts populares.</p></div></details>
-      <details><summary>¿Por qué la transacción necesita un replica set?</summary><div><p>MongoDB implementa las transacciones sobre la replicación. Una instancia sola las rechaza.</p></div></details>
-      <details><summary>¿Por qué la API usa "mongo" y no "localhost" en Docker?</summary><div><p>Cada contenedor es una máquina aparte: localhost sería el contenedor de la API. Compose crea una red donde los servicios se encuentran por su nombre.</p></div></details>
+      <h3>Conclusión</h3>
+      <p>Diseñamos e implementamos la base de datos de una red social de publicaciones cortas en MongoDB. El modelo documental resultó adecuado porque cada post tiene una estructura distinta y se lee completo de una vez: guardamos en un mismo documento todo lo que se muestra en pantalla y dejamos en colecciones aparte lo que crece sin límite, como los seguidores y los me gusta.</p>
+      <p>Sobre ese diseño cargamos 470 documentos reproducibles, verificados con 0 errores, y respondimos preguntas reales de la red social con 12 consultas. Construimos una API en capas que valida los datos y devuelve el código HTTP adecuado, y medimos con explain que los índices bajan los documentos leídos de 200 a 3 en el perfil, con un costo en escritura que decidimos pagar solo donde conviene.</p>
+      <p>Garantizamos la consistencia donde un error sería grave, con una transacción al votar, sacamos conclusiones de los datos con un análisis en Python y dejamos todo el proyecto listo para levantarse en cualquier computadora con un solo comando de Docker Compose.</p>
+      <p class="answer">La decisión que atraviesa todo el trabajo: en una red social se lee mucho más de lo que se escribe, así que priorizamos lecturas rápidas y pagamos el costo de escribir un poco más.</p>
     </div>
   </section>
   </main>
